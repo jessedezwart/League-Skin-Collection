@@ -1,4 +1,7 @@
 # Skin Collection
+[![Build](https://github.com/jessedezwart/skin-collection/actions/workflows/build.yml/badge.svg)](https://github.com/jessedezwart/skin-collection/actions/workflows/build.yml)
+
+**This is slop!**
 
 Windows desktop app (Tauri v2 + Svelte 5) that connects to the running League of Legends client, fetches every champion skin your account owns, and shows them in a gallery with their RP value and a total collection value.
 
