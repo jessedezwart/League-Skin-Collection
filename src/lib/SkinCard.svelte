@@ -17,6 +17,7 @@
 
   let src = $state<string | null>(null);
   let failed = $state(false);
+  let requested = $state(false);
 
   // Only download the image once the card scrolls near the viewport.
   function lazy(node: HTMLElement) {
@@ -24,6 +25,7 @@
       async (entries) => {
         if (!entries.some((e) => e.isIntersecting)) return;
         observer.disconnect();
+        requested = true;
         try {
           const path = await invoke<string>("get_skin_image", {
             skinId: skin.skinId,
@@ -51,7 +53,9 @@
     {:else if failed}
       <div class="placeholder">no image</div>
     {:else}
-      <div class="placeholder shimmer"></div>
+      <!-- Shimmer only while a download is actually in flight; off-screen
+           cards get a static placeholder so idle repaints stay at zero. -->
+      <div class="placeholder" class:shimmer={requested}></div>
     {/if}
     {#if skin.isLegacy}
       <span class="tag legacy">Legacy</span>

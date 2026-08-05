@@ -45,9 +45,16 @@
         void load();
       }
     };
-    void poll();
-    const id = setInterval(poll, 4000);
-    return () => clearInterval(id);
+    // Poll fast while waiting for the client, slowly once loaded.
+    let id: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      id = setTimeout(async () => {
+        await poll();
+        schedule();
+      }, status.state === "connected" && skins !== null ? 15000 : 4000);
+    };
+    void poll().then(schedule);
+    return () => clearTimeout(id);
   });
 
   async function load() {
