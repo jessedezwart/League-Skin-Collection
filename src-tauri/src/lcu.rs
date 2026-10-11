@@ -140,6 +140,9 @@ fn is_owned_skin(skin: &Value) -> bool {
     skin["isBase"].as_bool() != Some(true) && skin["ownership"]["owned"].as_bool() == Some(true)
 }
 
+/// Placeholder price the store catalog gives rewards that were never sold.
+const UNPURCHASABLE_RP: i64 = 999_999;
+
 /// Rarity-based RP estimate for skins missing from the live store catalog.
 /// Mythic-tier content is priced in other currencies, so it stays unpriced.
 fn rarity_rp(rarity: &str) -> Option<i64> {
@@ -172,6 +175,7 @@ pub async fn fetch_collection(dd: &DdState) -> Result<Vec<SkinDto>, String> {
     // availability dates, and for far more skins than it prices, so harvest both.
     let mut prices: std::collections::HashMap<i64, i64> = std::collections::HashMap::new();
     let mut availability: std::collections::HashMap<i64, String> = std::collections::HashMap::new();
+    let mut unpurchasable: std::collections::HashSet<i64> = std::collections::HashSet::new();
     if let Ok(catalog) = lcu
         .get("/lol-store/v1/catalog?inventoryType=[%22CHAMPION_SKIN%22]")
         .await
@@ -187,8 +191,18 @@ pub async fn fetch_collection(dd: &DdState) -> Result<Vec<SkinDto>, String> {
                 .iter()
                 .find(|p| p["currency"].as_str() == Some("RP"))
                 .and_then(|p| p["cost"].as_i64());
-            if let Some(rp) = rp {
-                prices.insert(item_id, rp);
+            // Rewards that were never sold for RP show up with a placeholder cost
+            // (0 for Prestige, 999999 for Victorious) or none at all while inactive.
+            // Inactive legacy skins keep their last real price, so `active` alone
+            // doesn't tell them apart.
+            match rp {
+                Some(rp) if (1..UNPURCHASABLE_RP).contains(&rp) => {
+                    prices.insert(item_id, rp);
+                }
+                None if item["active"].as_bool() != Some(false) => {}
+                _ => {
+                    unpurchasable.insert(item_id);
+                }
             }
             if let Some(date) = item["releaseDate"].as_str().filter(|d| !d.is_empty()) {
                 availability.insert(item_id, date.to_string());
@@ -238,10 +252,13 @@ pub async fn fetch_collection(dd: &DdState) -> Result<Vec<SkinDto>, String> {
             .map(|m| (m.rarity.clone(), m.is_legacy))
             .unwrap_or_else(|| ("kNoRarity".to_string(), false));
 
-        let (rp, value_source) = if is_clone_only {
+        let is_unpurchasable =
+            unpurchasable.contains(&skin_id) || unpurchasable.contains(&raw_id);
+        let (rp, value_source) = if is_clone_only || is_unpurchasable {
             // What survives here is the pre-VGU "Classic <champion>" base art. The
             // client counts it as a skin owned, but it was never sold for RP, so it
-            // must not pick up a rarity estimate.
+            // must not pick up a rarity estimate. Same for rewards the store marks as
+            // never sold for RP (Victorious, Prestige, event skins).
             (None, "none")
         } else {
             match prices.get(&skin_id).or_else(|| prices.get(&raw_id)) {
